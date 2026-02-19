@@ -14,9 +14,10 @@ from src.config import (
 from src.models.mobilenetv2 import build_student
 from src.data.dataset import create_dataloaders
 from src.training.train_baseline import train_baseline
-
+from src.utils.gpu_check import check_gpu_status
 
 if __name__ == "__main__":
+    check_gpu_status()
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=STUDENT_EPOCHS)

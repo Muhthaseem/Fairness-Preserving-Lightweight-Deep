@@ -21,7 +21,7 @@ def load_model_weights(model, weights_path, device=DEVICE):
     if not os.path.exists(weights_path):
         print(f"[WARN] Weights not found: {weights_path}")
         return model
-    checkpoint = torch.load(weights_path, map_location=device)
+    checkpoint = torch.load(weights_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     print(f"Loaded weights from: {weights_path}")
     return model

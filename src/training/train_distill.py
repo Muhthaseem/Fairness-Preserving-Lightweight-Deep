@@ -7,6 +7,7 @@ import time
 import torch
 import torch.nn as nn
 import numpy as np
+from torch.amp import autocast, GradScaler
 from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 
@@ -24,22 +25,13 @@ from src.training.train_baseline import (
 
 
 def train_distill_one_epoch(student, teacher, dataloader, optimizer,
-                             criterion, device=DEVICE):
+                             criterion, device=DEVICE, scaler=None):
     """
-    Train student for one epoch with fairness-aware distillation.
-
-    Args:
-        student: Student model (updated)
-        teacher: Teacher model (frozen, eval mode)
-        dataloader: Training DataLoader
-        optimizer: Student optimizer
-        criterion: CombinedFairDistillLoss instance
-
-    Returns:
-        dict: Training metrics including per-loss-component breakdown
+    Train student for one epoch with fairness-aware distillation + AMP.
     """
     student.train()
     teacher.eval()
+    use_amp = (scaler is not None) and device.type == 'cuda'
 
     total_loss = 0
     loss_components = {"distill": 0, "fairness": 0, "cls": 0}
@@ -50,22 +42,31 @@ def train_distill_one_epoch(student, teacher, dataloader, optimizer,
 
     pbar = tqdm(dataloader, desc="Distill Training", leave=False)
     for images, labels, groups in pbar:
-        images = images.to(device)
-        labels = labels.to(device)
-        groups = groups.to(device)
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
+        groups = groups.to(device, non_blocking=True)
 
-        # Get teacher predictions (no gradient)
+        # Get teacher predictions (no gradient, fp16 safe)
         with torch.no_grad():
-            teacher_logits = teacher(images).detach()
+            with autocast(device_type=device.type, enabled=use_amp):
+                teacher_logits = teacher(images).detach()
 
         # Forward pass on student
-        optimizer.zero_grad()
-        student_logits = student(images)
+        optimizer.zero_grad(set_to_none=True)
+        with autocast(device_type=device.type, enabled=use_amp):
+            student_logits = student(images)
+            loss, loss_dict = criterion(student_logits, teacher_logits, labels, groups)
 
-        # Combined loss
-        loss, loss_dict = criterion(student_logits, teacher_logits, labels, groups)
-        loss.backward()
-        optimizer.step()
+        if use_amp:
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
+            optimizer.step()
 
         total_loss += loss.item() * images.size(0)
         loss_components["distill"] += loss_dict["distill"] * images.size(0)
@@ -111,7 +112,7 @@ def train_distill_one_epoch(student, teacher, dataloader, optimizer,
 
 @torch.no_grad()
 def validate_distill(student, dataloader, device=DEVICE):
-    """Validate the student model (same as baseline validation)."""
+    """Validate the student model with AMP."""
     student.eval()
     criterion = nn.BCEWithLogitsLoss()
     total_loss = 0
@@ -119,13 +120,15 @@ def validate_distill(student, dataloader, device=DEVICE):
     all_preds = []
     all_groups = []
     all_logits = []
+    use_amp = device.type == 'cuda'
 
     for images, labels, groups in tqdm(dataloader, desc="Validating", leave=False):
-        images = images.to(device)
-        labels = labels.to(device)
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
 
-        logits = student(images)
-        loss = criterion(logits, labels)
+        with autocast(device_type=device.type, enabled=use_amp):
+            logits = student(images)
+            loss = criterion(logits, labels)
 
         total_loss += loss.item() * images.size(0)
         preds = (torch.sigmoid(logits) > 0.5).long()
@@ -205,13 +208,15 @@ def train_fair_distillation(student, teacher, train_loader, val_loader,
     best_auc = 0.0
     best_fairness = 1.0  # Best (lowest) accuracy gap
     history = {"train": [], "val": []}
+    # AMP GradScaler
+    scaler = GradScaler(device='cuda') if device.type == 'cuda' else None
 
     print(f"\n{'='*60}")
     print(f"Fairness-Aware Knowledge Distillation")
     print(f"  Student: {model_name}")
     print(f"  Loss: α={alpha}·Ld + β={beta}·Lf + γ={gamma}·Lc")
     print(f"  Temperature: {temperature}, Epochs: {num_epochs}")
-    print(f"  Curriculum: {curriculum}, Device: {device}")
+    print(f"  AMP (fp16): {'✅ ON' if scaler else '❌ OFF'}")
     print(f"{'='*60}\n")
 
     for epoch in range(num_epochs):
@@ -220,7 +225,7 @@ def train_fair_distillation(student, teacher, train_loader, val_loader,
 
         # Train
         train_metrics = train_distill_one_epoch(
-            student, teacher, train_loader, optimizer, criterion, device
+            student, teacher, train_loader, optimizer, criterion, device, scaler
         )
 
         # Validate

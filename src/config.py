@@ -77,9 +77,9 @@ FAIRFACE_RACE_MAP = {
 # ============================================================
 # Data Configuration
 # ============================================================
-IMAGE_SIZE = 256                  # Face crop size
+IMAGE_SIZE = 224                  # MobileNetV2 native size (23% faster than 256)
 FRAMES_PER_VIDEO = 30             # Frames to extract per video
-FACE_DETECTION_BATCH_SIZE = 16    # Batch size for MTCNN
+FACE_DETECTION_BATCH_SIZE = 256   # Batch size for MTCNN (increased for GPU saturation)
 MIN_FACE_SIZE = 60                # Minimum face size in pixels
 
 # FF++ manipulation types for training
@@ -98,7 +98,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Common training params
 BATCH_SIZE = 32
-NUM_WORKERS = 4
+NUM_WORKERS = 0   # Windows optimized (avoid multiprocessing spawn overhead)
 PIN_MEMORY = True
 
 # Teacher (XceptionNet)

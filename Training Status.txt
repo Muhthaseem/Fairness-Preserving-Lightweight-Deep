@@ -1,0 +1,93 @@
+              
+  Train — Loss: 0.0122, Acc: 0.9952, AUC: 0.9998
+  Val   — Loss: 0.3309, Acc: 0.9319, AUC: 0.9656
+  Group Acc Gap: 0.0568 (min: 0.9103, max: 0.9671)
+    Female-Asian        : 0.9655
+    Female-Black        : 0.9228
+    Female-Other        : 0.9431
+    Female-White        : 0.9316
+    Male-Asian          : 0.9461
+    Male-Black          : 0.9671
+    Male-Other          : 0.9165
+    Male-White          : 0.9103
+
+Epoch [15/50] (1634.9s)                                                                                                                                      
+  Train — Loss: 0.0117, Acc: 0.9956, AUC: 0.9998
+  Val   — Loss: 0.3813, Acc: 0.9248, AUC: 0.9619
+  Group Acc Gap: 0.0731 (min: 0.8886, max: 0.9616)
+    Female-Asian        : 0.9591
+    Female-Black        : 0.9437
+    Female-Other        : 0.9345
+    Female-White        : 0.9305
+    Male-Asian          : 0.9397
+    Male-Black          : 0.9616
+    Male-Other          : 0.8886
+    Male-White          : 0.9141
+
+Epoch [16/50] (1634.8s)                                                                                                                                      
+  Train — Loss: 0.0108, Acc: 0.9959, AUC: 0.9998
+  Val   — Loss: 0.3386, Acc: 0.9259, AUC: 0.9634
+  Group Acc Gap: 0.0805 (min: 0.8920, max: 0.9725)
+    Female-Asian        : 0.9725
+    Female-Black        : 0.9293
+    Female-Other        : 0.9365
+    Female-White        : 0.9292
+    Male-Asian          : 0.9429
+    Male-Black          : 0.9627
+    Male-Other          : 0.8920
+    Male-White          : 0.9103
+
+Epoch [17/50] (1634.6s)                                                                                                                                      
+  Train — Loss: 0.0101, Acc: 0.9962, AUC: 0.9999
+  Val   — Loss: 0.3744, Acc: 0.9268, AUC: 0.9614
+  Group Acc Gap: 0.0672 (min: 0.8962, max: 0.9633)
+    Female-Asian        : 0.9633
+    Female-Black        : 0.9306
+    Female-Other        : 0.9330
+    Female-White        : 0.9349
+    Male-Asian          : 0.9423
+    Male-Black          : 0.9463
+    Male-Other          : 0.8962
+    Male-White          : 0.9112
+
+Epoch [18/50] (1634.8s)                                                                                                                                      
+  Train — Loss: 0.0094, Acc: 0.9965, AUC: 0.9999
+  Val   — Loss: 0.3431, Acc: 0.9319, AUC: 0.9659
+  Group Acc Gap: 0.0473 (min: 0.9110, max: 0.9583)
+    Female-Asian        : 0.9514
+    Female-Black        : 0.9306
+    Female-Other        : 0.9396
+    Female-White        : 0.9388
+    Male-Asian          : 0.9494
+    Male-Black          : 0.9583
+    Male-Other          : 0.9127
+    Male-White          : 0.9110
+
+Epoch [19/50] (1634.6s)                                                                                                                                      
+  Train — Loss: 0.0086, Acc: 0.9966, AUC: 0.9999
+  Val   — Loss: 0.3487, Acc: 0.9274, AUC: 0.9605
+  Group Acc Gap: 0.0461 (min: 0.9034, max: 0.9496)
+    Female-Asian        : 0.9489
+    Female-Black        : 0.9110
+    Female-Other        : 0.9286
+    Female-White        : 0.9370
+    Male-Asian          : 0.9456
+    Male-Black          : 0.9496
+    Male-Other          : 0.9034
+    Male-White          : 0.9154
+
+Epoch [20/50] (1635.2s)                                                                                                                                      
+  Train — Loss: 0.0085, Acc: 0.9965, AUC: 0.9999
+  Val   — Loss: 0.3682, Acc: 0.9244, AUC: 0.9610
+  Group Acc Gap: 0.0295 (min: 0.9145, max: 0.9440)
+    Female-Asian        : 0.9383
+    Female-Black        : 0.9215
+    Female-Other        : 0.9229
+    Female-White        : 0.9252
+    Male-Asian          : 0.9440
+    Male-Black          : 0.9375
+    Male-Other          : 0.9178
+    Male-White          : 0.9145
+
+Training:  72%|██████████████████████████████████████████████████████████████████▋                         | 1662/2294 [18:36<07:04,  1.49it/s, loss=0.0002] 
+ *  History restored 

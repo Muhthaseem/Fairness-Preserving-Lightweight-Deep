@@ -16,9 +16,10 @@ from src.models.xception import build_teacher
 from src.models.mobilenetv2 import build_student
 from src.data.dataset import create_dataloaders
 from src.training.train_distill import train_fair_distillation
-
+from src.utils.gpu_check import check_gpu_status
 
 if __name__ == "__main__":
+    check_gpu_status()
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=DISTILL_EPOCHS)
@@ -38,7 +39,7 @@ if __name__ == "__main__":
     # Load trained teacher
     teacher = build_teacher(pretrained=True, device=DEVICE)
     if os.path.exists(args.teacher_weights):
-        checkpoint = torch.load(args.teacher_weights, map_location=DEVICE)
+        checkpoint = torch.load(args.teacher_weights, map_location=DEVICE, weights_only=False)
         teacher.load_state_dict(checkpoint["model_state_dict"])
         print(f"Loaded teacher weights from: {args.teacher_weights}")
         print(f"Teacher val AUC: {checkpoint.get('val_auc', 'N/A')}")

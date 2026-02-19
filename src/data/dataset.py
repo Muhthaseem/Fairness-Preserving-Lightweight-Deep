@@ -94,14 +94,14 @@ class DeepfakeDataset(Dataset):
         """
         Compute per-sample weights for balanced sampling.
         Weights are inverse of group frequency to balance demographics.
+        Vectorized — fast even on 500k+ rows.
         """
         group_counts = self.df["group_id"].value_counts()
         total = len(self.df)
-        weights = []
-        for _, row in self.df.iterrows():
-            gid = row["group_id"]
-            w = total / (NUM_GROUPS * group_counts.get(gid, 1))
-            weights.append(w)
+        # Map each row's group_id to its weight in one vectorized step
+        weights = self.df["group_id"].map(
+            lambda gid: total / (NUM_GROUPS * group_counts.get(gid, 1))
+        ).values
         return torch.DoubleTensor(weights)
 
 
@@ -116,15 +116,13 @@ class FairBatchSampler(Sampler):
         self.batch_size = batch_size
         self.num_groups = num_groups
 
-        # Build index lists per group
-        self.group_indices = defaultdict(list)
-        for idx, row in dataset.df.iterrows():
-            gid = row["group_id"]
-            self.group_indices[gid].append(idx)
-
-        # Shuffle within each group
-        for gid in self.group_indices:
-            np.random.shuffle(self.group_indices[gid])
+        # Build index lists per group — vectorized, no iterrows()
+        self.group_indices = {}
+        df = dataset.df.reset_index(drop=True)
+        for gid, grp in df.groupby("group_id"):
+            indices = grp.index.tolist()
+            np.random.shuffle(indices)
+            self.group_indices[gid] = indices
 
         self.num_samples = len(dataset)
 
@@ -166,7 +164,7 @@ class FairBatchSampler(Sampler):
 
 
 def create_dataloaders(train_csv, val_csv, test_csv=None,
-                       batch_size=BATCH_SIZE, num_workers=NUM_WORKERS,
+                       batch_size=BATCH_SIZE, num_workers=0,
                        fair_sampling=True):
     """
     Create training, validation, and optionally test DataLoaders.
@@ -185,6 +183,11 @@ def create_dataloaders(train_csv, val_csv, test_csv=None,
     train_dataset = DeepfakeDataset(train_csv, split="train")
     val_dataset = DeepfakeDataset(val_csv, split="val")
 
+    # On Windows, num_workers>0 causes multiprocessing spawn overhead.
+    # Use num_workers=0 (main process) for best performance on Windows.
+    _pin = PIN_MEMORY and num_workers > 0  # pin_memory only helps with workers
+    _persistent = num_workers > 0
+
     if fair_sampling:
         train_sampler = FairBatchSampler(train_dataset, batch_size)
         train_loader = DataLoader(
@@ -192,7 +195,8 @@ def create_dataloaders(train_csv, val_csv, test_csv=None,
             batch_size=batch_size,
             sampler=train_sampler,
             num_workers=num_workers,
-            pin_memory=PIN_MEMORY,
+            pin_memory=_pin,
+            persistent_workers=_persistent,
             drop_last=True,
         )
     else:
@@ -206,16 +210,18 @@ def create_dataloaders(train_csv, val_csv, test_csv=None,
             batch_size=batch_size,
             sampler=sampler,
             num_workers=num_workers,
-            pin_memory=PIN_MEMORY,
+            pin_memory=_pin,
+            persistent_workers=_persistent,
             drop_last=True,
         )
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=batch_size,
+        batch_size=batch_size * 2,  # Val has no grad — can use larger batch
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=PIN_MEMORY,
+        pin_memory=_pin,
+        persistent_workers=_persistent,
     )
 
     loaders = {"train": train_loader, "val": val_loader}

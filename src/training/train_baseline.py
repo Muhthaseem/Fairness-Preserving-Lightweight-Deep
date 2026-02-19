@@ -8,6 +8,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader
+from torch.amp import autocast, GradScaler
 from sklearn.metrics import roc_auc_score
 from tqdm import tqdm
 
@@ -65,9 +66,9 @@ def compute_per_group_accuracy(all_labels, all_preds, all_groups, num_groups=NUM
 
 
 def train_one_epoch(model, dataloader, optimizer, criterion, device=DEVICE,
-                    scheduler=None):
+                    scheduler=None, scaler=None):
     """
-    Train for one epoch.
+    Train for one epoch with optional AMP (fp16) support.
 
     Returns:
         dict: Training metrics (loss, accuracy, per-group accuracy)
@@ -78,18 +79,30 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device=DEVICE,
     all_preds = []
     all_groups = []
     all_logits = []
+    use_amp = (scaler is not None) and device.type == 'cuda'
 
     pbar = tqdm(dataloader, desc="Training", leave=False)
     for images, labels, groups in pbar:
-        images = images.to(device)
-        labels = labels.to(device)
-        groups = groups.to(device)
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
+        groups = groups.to(device, non_blocking=True)
 
-        optimizer.zero_grad()
-        logits = model(images)
-        loss = criterion(logits, labels)
-        loss.backward()
-        optimizer.step()
+        optimizer.zero_grad(set_to_none=True)
+
+        with autocast(device_type=device.type, enabled=use_amp):
+            logits = model(images)
+            loss = criterion(logits, labels)
+
+        if use_amp:
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
 
         total_loss += loss.item() * images.size(0)
         preds = (torch.sigmoid(logits) > 0.5).long()
@@ -130,7 +143,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion, device=DEVICE,
 @torch.no_grad()
 def validate(model, dataloader, criterion, device=DEVICE):
     """
-    Validate the model.
+    Validate the model with AMP for speed.
 
     Returns:
         dict: Validation metrics (loss, accuracy, AUC, per-group accuracy)
@@ -141,13 +154,15 @@ def validate(model, dataloader, criterion, device=DEVICE):
     all_preds = []
     all_groups = []
     all_logits = []
+    use_amp = device.type == 'cuda'
 
     for images, labels, groups in tqdm(dataloader, desc="Validating", leave=False):
-        images = images.to(device)
-        labels = labels.to(device)
+        images = images.to(device, non_blocking=True)
+        labels = labels.to(device, non_blocking=True)
 
-        logits = model(images)
-        loss = criterion(logits, labels)
+        with autocast(device_type=device.type, enabled=use_amp):
+            logits = model(images)
+            loss = criterion(logits, labels)
 
         total_loss += loss.item() * images.size(0)
         preds = (torch.sigmoid(logits) > 0.5).long()
@@ -181,7 +196,8 @@ def validate(model, dataloader, criterion, device=DEVICE):
 
 
 def train_baseline(model, train_loader, val_loader, optimizer, scheduler=None,
-                   num_epochs=50, model_name="model", device=DEVICE):
+                   num_epochs=50, model_name="model", device=DEVICE,
+                   resume_from_checkpoint=None):
     """
     Full baseline training loop with early stopping and checkpointing.
 
@@ -194,6 +210,7 @@ def train_baseline(model, train_loader, val_loader, optimizer, scheduler=None,
         num_epochs: Maximum number of epochs
         model_name: Name for saving checkpoints
         device: Device to train on
+        resume_from_checkpoint: Path to a .pth checkpoint to resume from
 
     Returns:
         dict: Best metrics and training history
@@ -201,19 +218,35 @@ def train_baseline(model, train_loader, val_loader, optimizer, scheduler=None,
     criterion = nn.BCEWithLogitsLoss()
     early_stopping = EarlyStopping(patience=PATIENCE, mode="max")
     best_auc = 0.0
+    start_epoch = 0
     history = {"train": [], "val": []}
+    # AMP GradScaler for fp16 training
+    scaler = GradScaler(device='cuda') if device.type == 'cuda' else None
+    if scaler:
+        print("  ⚡ AMP (fp16) enabled — expect 2-3× speedup")
+
+    # Resume from checkpoint if provided
+    if resume_from_checkpoint and os.path.exists(resume_from_checkpoint):
+        print(f"\nResuming from checkpoint: {resume_from_checkpoint}")
+        ckpt = torch.load(resume_from_checkpoint, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state_dict"])
+        optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+        best_auc = ckpt.get("val_auc", 0.0)
+        start_epoch = ckpt.get("epoch", 0) + 1  # resume AFTER the saved epoch
+        early_stopping.best_score = best_auc
+        print(f"  Resuming from epoch {start_epoch + 1}, best AUC so far: {best_auc:.4f}")
 
     print(f"\n{'='*60}")
     print(f"Training {model_name}")
-    print(f"Epochs: {num_epochs}, Device: {device}")
+    print(f"Epochs: {start_epoch + 1} → {num_epochs}, Device: {device}")
     print(f"{'='*60}\n")
 
-    for epoch in range(num_epochs):
+    for epoch in range(start_epoch, num_epochs):
         epoch_start = time.time()
 
         # Train
         train_metrics = train_one_epoch(model, train_loader, optimizer,
-                                         criterion, device, scheduler)
+                                         criterion, device, scheduler, scaler)
         # Validate
         val_metrics = validate(model, val_loader, criterion, device)
 

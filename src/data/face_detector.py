@@ -74,30 +74,75 @@ class FaceDetector:
         Returns:
             List of (face_pil, image_path) tuples for successfully detected faces
         """
+        # Parallel image loading
+        from concurrent.futures import ThreadPoolExecutor
+        
+        def load_img(path):
+            try:
+                return Image.open(path).convert("RGB"), path
+            except Exception:
+                return None, path
+
+        # Use threads for I/O bound loading
+        with ThreadPoolExecutor(max_workers=8) as executor:
+             loaded = list(executor.map(load_img, image_paths))
+
         images = []
         valid_paths = []
-
-        for path in image_paths:
-            try:
-                img = Image.open(path).convert("RGB")
+        for img, path in loaded:
+            if img is not None:
                 images.append(img)
                 valid_paths.append(path)
-            except Exception:
-                continue
 
         if not images:
             return []
 
-        # Batch detect
-        faces = self.mtcnn(images)
-        results = []
-        for face, path in zip(faces, valid_paths):
-            if face is not None:
-                if isinstance(face, torch.Tensor):
-                    face_np = face.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
-                    face_pil = Image.fromarray(face_np)
-                    results.append((face_pil, path))
-        return results
+        if not images:
+            return []
+
+        # Group by size to allow batching
+        from collections import defaultdict
+        by_size = defaultdict(list)
+        for i, img in enumerate(images):
+            by_size[img.size].append((i, img))
+
+        results = [None] * len(images) # Placeholder to preserve order if needed, though we return list
+
+        detected_results = []
+
+        # Process each size group
+        for size, items in by_size.items():
+            indices, batch_imgs = zip(*items)
+            
+            try:
+                # Run MTCNN on this sub-batch
+                batch_faces = self.mtcnn(list(batch_imgs))
+                
+                # Collect results
+                for i, face in zip(indices, batch_faces):
+                    if face is not None:
+                        if isinstance(face, torch.Tensor):
+                            face_np = face.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+                            face_pil = Image.fromarray(face_np)
+                            detected_results.append((face_pil, valid_paths[i]))
+                        else:
+                            # In case post_process=True or other return return type
+                             pass
+            except Exception as e:
+                print(f"[WARN] Batch detection failed for size {size}: {e}. Retrying individually.")
+                # Fallback to individual
+                for i in indices:
+                    try:
+                        face = self.mtcnn(images[i])
+                        if face is not None:
+                             if isinstance(face, torch.Tensor):
+                                face_np = face.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+                                face_pil = Image.fromarray(face_np)
+                                detected_results.append((face_pil, valid_paths[i]))
+                    except Exception as inner_e:
+                        print(f"[ERR] Individual detection failed for {valid_paths[i]}: {inner_e}")
+                        
+        return detected_results
 
 
 def process_faces_from_manifest(frames_csv, output_base_dir=FACES_DIR,
@@ -130,31 +175,37 @@ def process_faces_from_manifest(frames_csv, output_base_dir=FACES_DIR,
         batch_paths = all_paths[batch_start:batch_start + batch_size]
         batch_rows = df.iloc[batch_start:batch_start + batch_size]
 
-        for i, frame_path in enumerate(batch_paths):
-            row = batch_rows.iloc[i]
-            face = detector.detect_and_crop(frame_path)
+        # Batch detect
+        results = detector.detect_and_crop_batch(batch_paths)
 
-            if face is None:
-                failed_count += 1
+        # Create a map for the current batch for fast lookup
+        # frame_path is unique
+        batch_map = {row["frame_path"]: row for _, row in batch_rows.iterrows()}
+
+        for face, frame_path in results:
+            try:
+                row = batch_map[frame_path]
+                
+                # Construct output path mirroring the frame structure
+                rel_path = os.path.relpath(frame_path, FRAMES_DIR)
+                face_path = os.path.join(output_base_dir, rel_path)
+                os.makedirs(os.path.dirname(face_path), exist_ok=True)
+
+                # Save as JPEG
+                face.save(face_path, quality=95)
+
+                face_records.append({
+                    "face_path": face_path,
+                    "frame_path": frame_path,
+                    "video_path": row["video_path"],
+                    "label": row["label"],
+                    "source": row["source"],
+                    "video_id": row["video_id"],
+                    "dataset": row["dataset"],
+                })
+            except Exception as e:
+                print(f"[ERR] Error saving face for {frame_path}: {e}")
                 continue
-
-            # Construct output path mirroring the frame structure
-            rel_path = os.path.relpath(frame_path, FRAMES_DIR)
-            face_path = os.path.join(output_base_dir, rel_path)
-            os.makedirs(os.path.dirname(face_path), exist_ok=True)
-
-            # Save as JPEG
-            face.save(face_path, quality=95)
-
-            face_records.append({
-                "face_path": face_path,
-                "frame_path": frame_path,
-                "video_path": row["video_path"],
-                "label": row["label"],
-                "source": row["source"],
-                "video_id": row["video_id"],
-                "dataset": row["dataset"],
-            })
 
     face_df = pd.DataFrame(face_records)
     csv_path = frames_csv.replace("frames.csv", "faces.csv").replace(

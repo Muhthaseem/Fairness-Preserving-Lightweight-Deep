@@ -23,7 +23,7 @@ if __name__ == "__main__":
     # Load model
     model = build_student(pretrained=True, device=DEVICE)
     if os.path.exists(args.model_weights):
-        checkpoint = torch.load(args.model_weights, map_location=DEVICE)
+        checkpoint = torch.load(args.model_weights, map_location=DEVICE, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"])
         print(f"Loaded model from: {args.model_weights}")
 

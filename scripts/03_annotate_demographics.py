@@ -14,5 +14,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, default=None,
                         help="Path to FairFace model weights")
+    parser.add_argument("--batch_size", type=int, default=32,
+                        help="Batch size for annotation")
     args = parser.parse_args()
-    annotate_all_faces(model_path=args.model_path)
+    annotate_all_faces(model_path=args.model_path, batch_size=args.batch_size)

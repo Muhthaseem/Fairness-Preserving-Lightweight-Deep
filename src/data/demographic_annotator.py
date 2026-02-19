@@ -40,37 +40,93 @@ class FairFaceAnnotator:
                                  std=[0.229, 0.224, 0.225]),
         ])
 
-        # Use a ResNet34 pretrained model as FairFace backbone
-        self.model = models.resnet34(pretrained=True)
-        # Replace the final FC layer with two heads
+        # Initialize model structure (ResNet34)
+        self.model = models.resnet34(weights=None)
         num_features = self.model.fc.in_features
-        self.model.fc = nn.Identity()  # Remove original FC
+        self.model.fc = nn.Linear(num_features, 18) # FairFace has 18 outputs (Race+Gender+Age) usually, but here we strictly need 7+2
+        
+        # Standard FairFace (7 race, 2 gender) structure usually is one model or two. 
+        # Here we use the specific architecture expected by 'res34_fair_align_multi_7_20190809.pt'
+        # which is a standard ResNet34. The official weights are full state dicts.
+        
+        # Official FairFace model weights on Google Drive
+        # ID: 11y0Wi3YQf21a_VcspUV4FwqzhMcfaVAB
+        file_id = "11y0Wi3YQf21a_VcspUV4FwqzhMcfaVAB"
+        save_path = os.path.join(MODELS_DIR, "res34_fair_align_multi_7_20190809.pt")
 
-        self.race_head = nn.Linear(num_features, len(FAIRFACE_RACES))
-        self.gender_head = nn.Linear(num_features, len(FAIRFACE_GENDERS))
+        if not os.path.exists(save_path):
+             print(f"Downloading FairFace weights to {save_path}...")
+             try:
+                 self._download_file_from_google_drive(file_id, save_path)
+                 if os.path.exists(save_path) and os.path.getsize(save_path) < 1000:
+                     # If file is too small, it's likely an error page
+                     print("Download file too small, likely failed.")
+                     os.remove(save_path)
+             except Exception as e:
+                 print(f"Failed to download weights: {e}")
 
-        # Load pretrained FairFace weights if available
-        if model_path and os.path.exists(model_path):
-            checkpoint = torch.load(model_path, map_location=device)
-            if "model_state_dict" in checkpoint:
-                self.model.load_state_dict(checkpoint["model_state_dict"],
-                                           strict=False)
-            if "race_head" in checkpoint:
-                self.race_head.load_state_dict(checkpoint["race_head"])
-            if "gender_head" in checkpoint:
-                self.gender_head.load_state_dict(checkpoint["gender_head"])
-            print(f"Loaded FairFace weights from: {model_path}")
+        # Re-build for specific heads as used in our project
+        self.model = models.resnet34(weights=None) # Reset
+        self.model.fc = nn.Identity()
+        self.race_head = nn.Linear(num_features, 7)
+        self.gender_head = nn.Linear(num_features, 2)
+        
+        if os.path.exists(save_path):
+            state_dict = torch.load(save_path, map_location=device, weights_only=False)
+            # The official model output is a single linear layer of size 9 (7 race + 2 gender) OR 18.
+            # We need to be careful. The official release is `fc` layer with 9 outputs.
+            # 0-6: Race, 7-8: Gender
+            
+            # Load backbone
+            self.model.load_state_dict(state_dict, strict=False)
+            
+            # Extract weights for heads manually from 'fc.weight' and 'fc.bias' of the loaded state_dict
+            if 'fc.weight' in state_dict:
+                # Race (first 7)
+                self.race_head.weight.data = state_dict['fc.weight'][:7]
+                self.race_head.bias.data = state_dict['fc.bias'][:7]
+                # Gender (next 2) -> actually indices 7 and 8
+                self.gender_head.weight.data = state_dict['fc.weight'][7:9]
+                self.gender_head.bias.data = state_dict['fc.bias'][7:9]
+                print(f"[INFO] Loaded FairFace weights from {save_path}")
         else:
-            print("[INFO] No FairFace weights found. Using pretrained ResNet34 "
-                  "features. Results will be approximate demographic estimates.")
+             print("[WARN] Using random weights! Results will be garbage.")
 
         self.model = self.model.to(device)
         self.race_head = self.race_head.to(device)
         self.gender_head = self.gender_head.to(device)
-
+        
         self.model.eval()
         self.race_head.eval()
         self.gender_head.eval()
+
+    def _download_file_from_google_drive(self, id, destination):
+        import requests
+        URL = "https://docs.google.com/uc?export=download"
+
+        session = requests.Session()
+
+        response = session.get(URL, params={'id': id}, stream=True)
+        token = self._get_confirm_token(response)
+
+        if token:
+            params = {'id': id, 'confirm': token}
+            response = session.get(URL, params=params, stream=True)
+
+        self._save_response_content(response, destination)
+
+    def _get_confirm_token(self, response):
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                return value
+        return None
+
+    def _save_response_content(self, response, destination):
+        CHUNK_SIZE = 32768
+        with open(destination, "wb") as f:
+            for chunk in response.iter_content(CHUNK_SIZE):
+                if chunk: # filter out keep-alive new chunks
+                    f.write(chunk)
 
     @torch.no_grad()
     def predict(self, image):
@@ -202,14 +258,31 @@ def annotate_faces_from_manifest(faces_csv, batch_size=32, model_path=None):
         # Load and predict batch
         valid_images = []
         valid_indices = []
-        for i, path in enumerate(batch_paths):
+        # Load batch images in parallel
+        from concurrent.futures import ThreadPoolExecutor
+
+        def load_img(idx_path):
+            i, path = idx_path
             try:
-                img = Image.open(path).convert("RGB")
-                valid_images.append(img)
-                valid_indices.append(batch_start + i)
+                return i, Image.open(path).convert("RGB")
             except Exception:
-                # Mark failed images with defaults
-                pass
+                return i, None
+
+        valid_images = []
+        valid_indices = []
+        
+        # Prepare args for map (enumerate logic)
+        args = [(i, path) for i, path in enumerate(batch_paths)]
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(load_img, args))
+        
+        # Sort results to maintain order (though map usually preserves it)
+        # and filter Nones
+        for local_len_idx, img in results:
+            if img is not None:
+                valid_images.append(img)
+                valid_indices.append(batch_start + local_len_idx)
 
         if valid_images:
             preds = annotator.predict_batch(valid_images)
@@ -260,7 +333,7 @@ def annotate_faces_from_manifest(faces_csv, batch_size=32, model_path=None):
     return df
 
 
-def annotate_all_faces(model_path=None):
+def annotate_all_faces(model_path=None, batch_size=32):
     """Annotate faces from all dataset manifests."""
     print("=" * 60)
     print("DEMOGRAPHIC ANNOTATION PIPELINE")
@@ -272,7 +345,8 @@ def annotate_all_faces(model_path=None):
         if os.path.exists(manifest_path):
             print(f"\nAnnotating: {manifest_name}")
             df = annotate_faces_from_manifest(manifest_path,
-                                               model_path=model_path)
+                                               model_path=model_path,
+                                               batch_size=batch_size)
             all_dfs.append(df)
         else:
             print(f"[WARN] Manifest not found: {manifest_path}")
