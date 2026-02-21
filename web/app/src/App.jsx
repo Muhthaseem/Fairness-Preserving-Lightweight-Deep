@@ -10,12 +10,15 @@ function App() {
     const [result, setResult] = useState(null);
     const fileInputRef = useRef(null);
 
+    const [isVideo, setIsVideo] = useState(false);
+
     const handleFileChange = (e) => {
         const file = e.target.files[0];
         if (file) {
             setImage(file);
             setPreview(URL.createObjectURL(file));
             setResult(null);
+            setIsVideo(file.type.startsWith('video/'));
         }
     };
 
@@ -33,10 +36,11 @@ function App() {
         e.stopPropagation();
 
         const file = e.dataTransfer.files[0];
-        if (file && file.type.startsWith('image/')) {
+        if (file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
             setImage(file);
             setPreview(URL.createObjectURL(file));
             setResult(null);
+            setIsVideo(file.type.startsWith('video/'));
         }
     };
 
@@ -84,24 +88,28 @@ function App() {
                     >
                         {preview ? (
                             <div className="preview-container">
-                                <img src={preview} alt="Preview" className="preview-img" />
+                                {isVideo ? (
+                                    <video src={preview} className="preview-img" autoPlay muted loop />
+                                ) : (
+                                    <img src={preview} alt="Preview" className="preview-img" />
+                                )}
                             </div>
                         ) : (
                             <>
                                 <span className="upload-icon">🔭</span>
-                                <p>Drag forensic asset or click to ingest</p>
+                                <p>Drag frame asset or video stream</p>
                             </>
                         )}
                         <input
                             type="file"
                             ref={fileInputRef}
                             onChange={handleFileChange}
-                            accept="image/*"
+                            accept="image/*,video/*"
                         />
                     </div>
 
                     <button onClick={handlePredict} disabled={!image || loading}>
-                        {loading ? 'Decrypting Neural Artifacts...' : 'Initiate Forensic Scan'}
+                        {loading ? 'Processing Neural Stream...' : 'Initiate Forensic Scan'}
                     </button>
                 </section>
 
@@ -117,7 +125,9 @@ function App() {
                     {loading && (
                         <div style={{ textAlign: 'center', padding: '2rem' }}>
                             <div className="loading-spinner"></div>
-                            <p style={{ color: 'var(--primary)', fontWeight: '600', marginTop: '1rem' }}>Extracting Forgery Signatures...</p>
+                            <p style={{ color: 'var(--primary)', fontWeight: '600', marginTop: '1rem' }}>
+                                {isVideo ? 'Performing Temporal Scan...' : 'Extracting Forgery Signatures...'}
+                            </p>
                         </div>
                     )}
 
@@ -142,12 +152,12 @@ function App() {
 
                             <div className="stats-grid">
                                 <div className="stat-item">
-                                    <div className="stat-label">Inference Latency</div>
+                                    <div className="stat-label">Analysis Latency</div>
                                     <div className="stat-val">{result.inference_ms} ms</div>
                                 </div>
                                 <div className="stat-item">
-                                    <div className="stat-label">Detected Group</div>
-                                    <div className="stat-val">{result.demographics?.group || 'N/A'}</div>
+                                    <div className="stat-label">{result.is_video ? 'Frames Scanned' : 'Detected Group'}</div>
+                                    <div className="stat-val">{result.is_video ? `${result.frames_scanned} Frames` : (result.demographics?.group || 'N/A')}</div>
                                 </div>
                                 <div className="stat-item">
                                     <div className="stat-label">Applied Threshold</div>
@@ -158,6 +168,29 @@ function App() {
                                     <div className="stat-val" style={{ color: 'var(--success)' }}>Verified</div>
                                 </div>
                             </div>
+
+                            {result.heatmap && (
+                                <div className="heatmap-section" style={{ marginTop: '2rem' }}>
+                                    <div className="prediction-label">Forgery Localization Overlay</div>
+                                    <div
+                                        style={{
+                                            borderRadius: '12px',
+                                            overflow: 'hidden',
+                                            border: '2px solid var(--secondary)',
+                                            boxShadow: '0 0 20px rgba(0, 243, 255, 0.2)'
+                                        }}
+                                    >
+                                        <img
+                                            src={`data:image/jpeg;base64,${result.heatmap}`}
+                                            alt="Grad-CAM Heatmap"
+                                            style={{ width: '100%', display: 'block' }}
+                                        />
+                                    </div>
+                                    <p style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.5rem', textAlign: 'center' }}>
+                                        Heatmap highlights pixel regions with high forgery activation signatures.
+                                    </p>
+                                </div>
+                            )}
 
                             <div style={{ marginTop: '1.5rem', padding: '0.8rem', background: 'rgba(0, 242, 255, 0.05)', borderRadius: '8px', borderLeft: '3px solid var(--secondary)' }}>
                                 <p style={{ fontSize: '0.8rem', color: 'var(--text-main)' }}>
