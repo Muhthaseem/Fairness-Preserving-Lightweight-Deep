@@ -140,15 +140,8 @@ def analyze_video(video_path):
     sample_rate = max(1, int(fps))
     frames_processed = 0
     
-    final_result = {
-        "prediction": "REAL",
-        "confidence": 0,
-        "probability": 0,
-        "frames_scanned": 0,
-        "demographics": None,
-        "heatmap": None,
-        "is_video": True
-    }
+    # Metadata for the consensus
+    frame_results = [] # List of (is_fake, probability, demographic_info, heatmap_candidate)
     
     frame_idx = 0
     while cap.isOpened():
@@ -167,40 +160,71 @@ def analyze_video(video_path):
                 group_name = demo["demographic_group"]
                 threshold = thresholds.get(group_name, 0.5)
                 
-                if final_result["demographics"] is None:
-                    final_result["demographics"] = {
+                is_fake = prob > threshold
+                
+                # We store a potential heatmap for the 'most fake' frame found so far
+                heatmap_b64 = None
+                if is_fake:
+                    heatmap_b64 = get_cam_base64(input_tensor, face_bgr_crop)
+
+                frame_results.append({
+                    "is_fake": is_fake,
+                    "probability": prob,
+                    "demo": {
                         "group": group_name,
                         "race": demo["race"],
                         "gender": demo["gender"],
                         "threshold_applied": round(threshold, 4)
-                    }
-
-                # EARLY EXIT
-                if prob > threshold:
-                    # Generate Grad-CAM for the offending FACE CROP
-                    heatmap_b64 = get_cam_base64(input_tensor, face_bgr_crop)
-                    final_result.update({
-                        "prediction": "FAKE",
-                        "confidence": prob,
-                        "probability": prob,
-                        "frames_scanned": frames_processed,
-                        "heatmap": heatmap_b64
-                    })
-                    cap.release()
-                    return final_result
-                
-                current_conf = 1 - prob
-                if current_conf > final_result["confidence"]:
-                    final_result["confidence"] = current_conf
-                    final_result["probability"] = prob
+                    },
+                    "heatmap": heatmap_b64
+                })
 
         frame_idx += 1
+        # Hard limit for demo: 30 seconds of video
         if frame_idx > fps * 30:
             break
             
     cap.release()
-    final_result["frames_scanned"] = frames_processed
-    return final_result
+
+    if not frame_results:
+        return {"error": "No faces detected in video"}
+
+    # --- Forensic Voting Consensus ---
+    fake_count = sum(1 for r in frame_results if r["is_fake"])
+    fake_ratio = fake_count / len(frame_results)
+    
+    # Threshold: If > 30% of frames are fake, the video is FAKE
+    # Why 30%? Real videos might have noise/glitches in 5-10% of frames, but deepfakes are usually sustained.
+    is_fake_consensus = fake_ratio > 0.30
+    
+    # Find the 'most significant' frame for the report
+    if is_fake_consensus:
+        # Most confident Fake frame
+        significant_frame = max([r for r in frame_results if r["is_fake"]], key=lambda x: x["probability"])
+        prediction = "FAKE"
+        # Average probability of the fake frames
+        confidence = sum(r["probability"] for r in frame_results if r["is_fake"]) / fake_count
+    else:
+        # Most confident Real frame
+        significant_frame = min(frame_results, key=lambda x: x["probability"])
+        prediction = "REAL"
+        # Average probability of real frames (converted to confidence)
+        real_frames = [r for r in frame_results if not r["is_fake"]]
+        if not real_frames: # Edge case: all frames were fake but ratio <= 30%
+            confidence = 1 - (sum(r["probability"] for r in frame_results) / len(frame_results))
+        else:
+            confidence = 1 - (sum(r["probability"] for r in real_frames) / len(real_frames))
+
+    return {
+        "prediction": prediction,
+        "confidence": confidence,
+        "probability": significant_frame["probability"],
+        "frames_scanned": frames_processed,
+        "fake_ratio": round(fake_ratio, 4),
+        "demographics": significant_frame["demo"],
+        "heatmap": significant_frame["heatmap"],
+        "is_video": True
+    }
 
 # --- API Endpoints ---
 

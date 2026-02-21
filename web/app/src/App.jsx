@@ -138,7 +138,12 @@ function App() {
                                 {result.prediction}
                             </div>
 
-                            <div className="prediction-label">Confidence Interval</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div className="prediction-label">Confidence Interval</div>
+                                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+                                    {(result.confidence * 100).toFixed(2)}%
+                                </div>
+                            </div>
                             <div className="progress-container">
                                 <div
                                     className="progress-bar"
@@ -159,6 +164,12 @@ function App() {
                                     <div className="stat-label">{result.is_video ? 'Frames Scanned' : 'Detected Group'}</div>
                                     <div className="stat-val">{result.is_video ? `${result.frames_scanned} Frames` : (result.demographics?.group || 'N/A')}</div>
                                 </div>
+                                {result.is_video && (
+                                    <div className="stat-item">
+                                        <div className="stat-label">Manipulation Ratio</div>
+                                        <div className="stat-val">{(result.fake_ratio * 100).toFixed(1)}%</div>
+                                    </div>
+                                )}
                                 <div className="stat-item">
                                     <div className="stat-label">Applied Threshold</div>
                                     <div className="stat-val">t = {result.demographics?.threshold_applied || '0.5'}</div>
