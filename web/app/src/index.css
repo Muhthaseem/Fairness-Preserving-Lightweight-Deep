@@ -38,26 +38,28 @@ body {
 }
 
 .container {
-    max-width: 1300px;
+    max-width: 1400px;
     width: 100%;
     margin: 0 auto;
-    padding: 3rem 2rem;
+    padding: 1.5rem 2rem;
     flex: 1;
     z-index: 10;
+    display: flex;
+    flex-direction: column;
 }
 
 header {
     text-align: left;
-    margin-bottom: 4rem;
+    margin-bottom: 2rem;
     border-left: 4px solid var(--primary);
-    padding-left: 1.5rem;
+    padding-left: 1.2rem;
 }
 
 h1 {
-    font-size: 3.5rem;
+    font-size: 2.8rem;
     font-weight: 900;
-    letter-spacing: -2px;
-    margin-bottom: 0.5rem;
+    letter-spacing: -1.5px;
+    margin-bottom: 0.2rem;
     background: linear-gradient(to right, #fff, var(--text-dim));
     -webkit-background-clip: text;
     background-clip: text;
@@ -66,25 +68,27 @@ h1 {
 
 .subtitle {
     color: var(--text-dim);
-    font-size: 1.25rem;
+    font-size: 1rem;
     font-weight: 300;
+    margin-bottom: 0.8rem;
+}
+
+.researcher-info {
+    font-size: 0.85rem;
+    color: var(--text-main);
+    line-height: 1.4;
+    letter-spacing: 0.5px;
+    opacity: 0.8;
 }
 
 .main-grid {
     display: grid;
-    grid-template-columns: 1fr 1.2fr;
-    gap: 3rem;
-    align-items: start;
-}
-
-@media (max-width: 1024px) {
-    .main-grid {
-        grid-template-columns: 1fr;
-    }
-
-    h1 {
-        font-size: 2.5rem;
-    }
+    grid-template-columns: 1fr 1.6fr;
+    /* Slightly wider report side */
+    gap: 2rem;
+    align-items: stretch;
+    /* Cards will be same height */
+    flex: 1;
 }
 
 .glass-card {
@@ -92,9 +96,16 @@ h1 {
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--glass-border);
-    border-radius: 32px;
-    padding: 2.5rem;
+    border-radius: 24px;
+    padding: 2rem;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+}
+
+.glass-card h3 {
+    margin-bottom: 0.5rem;
+    font-size: 1.5rem;
 }
 
 h3 {
@@ -110,7 +121,8 @@ h3 {
 .upload-zone {
     border: 2px dashed var(--glass-border);
     border-radius: 20px;
-    padding: 4rem 2rem;
+    padding: 1.5rem;
+    /* Reduced padding for more image space */
     text-align: center;
     cursor: pointer;
     background: rgba(255, 255, 255, 0.02);
@@ -121,6 +133,11 @@ h3 {
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+    flex: 1;
+    /* Stretch to fill card */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .upload-zone::after {
@@ -168,17 +185,21 @@ h3 {
 
 .preview-container {
     width: 100%;
-    aspect-ratio: 1;
+    max-height: 450px;
     border-radius: 12px;
     overflow: hidden;
     border: 4px solid var(--bg-dark);
     box-shadow: 0 0 0 1px var(--glass-border);
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .preview-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    max-width: 100%;
+    max-height: 450px;
+    object-fit: contain;
 }
 
 button {
@@ -209,6 +230,9 @@ button:disabled {
 /* Results Display */
 .result-box {
     animation: slideUp 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+    display: flex;
+    flex-direction: column;
+    flex: 1;
 }
 
 @keyframes slideUp {
@@ -269,29 +293,35 @@ button:disabled {
 .stats-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 1.25rem;
-    margin-top: 2.5rem;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+    grid-auto-rows: 1fr;
+    /* All items same height */
 }
 
 .stat-item {
     background: rgba(0, 0, 0, 0.2);
-    padding: 1.25rem;
-    border-radius: 20px;
+    padding: 0.7rem 1rem;
+    border-radius: 12px;
     border: 1px solid var(--glass-border);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .stat-label {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 1px;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.1rem;
 }
 
 .stat-val {
-    font-size: 1.25rem;
+    font-size: 1rem;
     font-weight: 700;
     color: #fff;
+    white-space: nowrap;
 }
 
 .loading-spinner {

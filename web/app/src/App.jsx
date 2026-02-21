@@ -71,6 +71,11 @@ function App() {
             <header>
                 <h1>SecureEye Deepfake Detection</h1>
                 <p className="subtitle">Research-grade, fairness-aware AI for digital integrity</p>
+                <div className="researcher-info">
+                    <strong>Researcher:</strong> M.M.Muhthaseem | 21/ENG/088
+                    <br />
+                    <span>Faculty of Engineering, University of Sri Jayewardenepura</span>
+                </div>
             </header>
 
             <div className="main-grid">
@@ -138,70 +143,75 @@ function App() {
                                 {result.prediction}
                             </div>
 
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <div className="prediction-label">Confidence Interval</div>
-                                <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--primary)' }}>
-                                    {(result.confidence * 100).toFixed(2)}%
-                                </div>
-                            </div>
-                            <div className="progress-container">
-                                <div
-                                    className="progress-bar"
-                                    style={{ width: `${(result.confidence || 0) * 100}%` }}
-                                ></div>
-                            </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '-0.5rem' }}>
-                                <span>Statistical Noise</span>
-                                <span>Deterministic</span>
-                            </div>
+                            <div className="compact-results-layout" style={{ display: 'grid', gridTemplateColumns: result.heatmap ? '1fr 1fr' : '1fr', gap: '2rem' }}>
+                                <div className="result-main-col">
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div className="prediction-label">Confidence Interval</div>
+                                        <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+                                            {(result.confidence * 100).toFixed(2)}%
+                                        </div>
+                                    </div>
+                                    <div className="progress-container">
+                                        <div
+                                            className="progress-bar"
+                                            style={{ width: `${(result.confidence || 0) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '-0.5rem', marginBottom: '1.5rem' }}>
+                                        <span>Statistical Noise</span>
+                                        <span>Deterministic</span>
+                                    </div>
 
-                            <div className="stats-grid">
-                                <div className="stat-item">
-                                    <div className="stat-label">Analysis Latency</div>
-                                    <div className="stat-val">{result.inference_ms} ms</div>
+                                    <div className="stats-grid" style={{ marginTop: '0' }}>
+                                        <div className="stat-item">
+                                            <div className="stat-label">Analysis Latency</div>
+                                            <div className="stat-val">{result.inference_ms} ms</div>
+                                        </div>
+                                        <div className="stat-item">
+                                            <div className="stat-label">{result.is_video ? 'Frames Scanned' : 'Detected Group'}</div>
+                                            <div className="stat-val">{result.is_video ? `${result.frames_scanned} Frames` : (result.demographics?.group || 'N/A')}</div>
+                                        </div>
+                                        {result.is_video && (
+                                            <div className="stat-item">
+                                                <div className="stat-label">Manipulation Ratio</div>
+                                                <div className="stat-val">{(result.fake_ratio * 100).toFixed(1)}%</div>
+                                            </div>
+                                        )}
+                                        <div className="stat-item">
+                                            <div className="stat-label">Applied Threshold</div>
+                                            <div className="stat-val">t = {result.demographics?.threshold_applied || '0.5'}</div>
+                                        </div>
+                                        <div className="stat-item">
+                                            <div className="stat-label">Bias Mitigation</div>
+                                            <div className="stat-val" style={{ color: 'var(--success)', fontSize: '0.9rem' }}>Verified</div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="stat-item">
-                                    <div className="stat-label">{result.is_video ? 'Frames Scanned' : 'Detected Group'}</div>
-                                    <div className="stat-val">{result.is_video ? `${result.frames_scanned} Frames` : (result.demographics?.group || 'N/A')}</div>
-                                </div>
-                                {result.is_video && (
-                                    <div className="stat-item">
-                                        <div className="stat-label">Manipulation Ratio</div>
-                                        <div className="stat-val">{(result.fake_ratio * 100).toFixed(1)}%</div>
+
+                                {result.heatmap && (
+                                    <div className="heatmap-section">
+                                        <div className="prediction-label" style={{ marginBottom: '0.5rem' }}>Forgery Localization</div>
+                                        <div
+                                            style={{
+                                                borderRadius: '16px',
+                                                overflow: 'hidden',
+                                                border: '2px solid var(--secondary)',
+                                                boxShadow: '0 0 20px rgba(0, 243, 255, 0.2)',
+                                                height: '220px'
+                                            }}
+                                        >
+                                            <img
+                                                src={`data:image/jpeg;base64,${result.heatmap}`}
+                                                alt="Grad-CAM Heatmap"
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                            />
+                                        </div>
+                                        <p style={{ fontSize: '0.65rem', color: 'var(--text-dim)', marginTop: '0.5rem', textAlign: 'center', lineHeight: '1.2' }}>
+                                            Colored regions highlight high-forgery signatures detected on the face.
+                                        </p>
                                     </div>
                                 )}
-                                <div className="stat-item">
-                                    <div className="stat-label">Applied Threshold</div>
-                                    <div className="stat-val">t = {result.demographics?.threshold_applied || '0.5'}</div>
-                                </div>
-                                <div className="stat-item">
-                                    <div className="stat-label">Bias Mitigation</div>
-                                    <div className="stat-val" style={{ color: 'var(--success)' }}>Verified</div>
-                                </div>
                             </div>
-
-                            {result.heatmap && (
-                                <div className="heatmap-section" style={{ marginTop: '2rem' }}>
-                                    <div className="prediction-label">Forgery Localization Overlay</div>
-                                    <div
-                                        style={{
-                                            borderRadius: '12px',
-                                            overflow: 'hidden',
-                                            border: '2px solid var(--secondary)',
-                                            boxShadow: '0 0 20px rgba(0, 243, 255, 0.2)'
-                                        }}
-                                    >
-                                        <img
-                                            src={`data:image/jpeg;base64,${result.heatmap}`}
-                                            alt="Grad-CAM Heatmap"
-                                            style={{ width: '100%', display: 'block' }}
-                                        />
-                                    </div>
-                                    <p style={{ fontSize: '0.7rem', color: 'var(--text-dim)', marginTop: '0.5rem', textAlign: 'center' }}>
-                                        Heatmap highlights pixel regions with high forgery activation signatures.
-                                    </p>
-                                </div>
-                            )}
 
                             <div style={{ marginTop: '1.5rem', padding: '0.8rem', background: 'rgba(0, 242, 255, 0.05)', borderRadius: '8px', borderLeft: '3px solid var(--secondary)' }}>
                                 <p style={{ fontSize: '0.8rem', color: 'var(--text-main)' }}>
