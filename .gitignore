@@ -1,23 +1,39 @@
-# Datasets (large video files)
+# Large Data
 Datasets/
+frames/
+faces/
 
-# Virtual environment
+# Virtual Environments
+.venv/
 venv/
+env/
+ENV/
+
+# Outputs
+outputs/
+*.pth
+*.pt
+*.csv
+*.txt
+!requirements.txt
+!docs/*.md
+!docs/exports/
+
+# Notebooks
+notebooks/.ipynb_checkpoints/
 
 # Python cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
+/build/
+/dist/
 
-# Outputs (generated during training)
-outputs/
-
-# IDE
+# IDE & OS
 .vscode/
 .idea/
 *.swp
-
-# OS
 Thumbs.db
 .DS_Store
+*.log

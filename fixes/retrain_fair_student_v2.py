@@ -26,7 +26,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.config import (
@@ -46,7 +46,7 @@ V2_BETA = 0.4           # Fairness loss weight    (was 0.2) << KEY CHANGE
 V2_GAMMA = 0.1          # Classification loss weight (unchanged)
 V2_TEMPERATURE = 4.0    # Distillation temperature (unchanged)
 V2_EPOCHS = 50          # Max epochs
-V2_BATCH_SIZE = 32      # Batch size (teacher+student in VRAM)
+V2_BATCH_SIZE = 128     # Lowered from 256 for stable validation
 V2_MODEL_NAME = "fair_student"  # Same name so evaluation scripts work
 
 # ============================================================
@@ -144,11 +144,14 @@ def main():
         print(f"  ERROR: Split CSVs not found in {SPLITS_DIR}")
         sys.exit(1)
 
-    train_loader, val_loader = create_dataloaders(
+    loaders = create_dataloaders(
         train_csv, val_csv,
         batch_size=V2_BATCH_SIZE,
-        num_workers=0,
+        num_workers= 12,
     )
+    train_loader = loaders['train']
+    val_loader   = loaders['val']
+
 
     # Step 6: Setup optimizer and scheduler
     print(f"\n--- Step 6: Setting up optimizer ---")

@@ -68,7 +68,11 @@ class DeepfakeDataset(Dataset):
     def __len__(self):
         return len(self.df)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, depth=0):
+        if depth > 10:
+            # Fallback to a black image if too many retries
+            return torch.zeros((3, 224, 224)), torch.tensor(0.0), torch.tensor(0)
+            
         row = self.df.iloc[idx]
         face_path = row["face_path"]
         label = row["label_int"]
@@ -77,8 +81,9 @@ class DeepfakeDataset(Dataset):
         try:
             image = Image.open(face_path).convert("RGB")
         except Exception:
-            # Return a random valid index if image fails to load
-            return self.__getitem__(np.random.randint(len(self.df)))
+            # Try another random index
+            return self.__getitem__(np.random.randint(len(self.df)), depth + 1)
+
 
         image = self.transform(image)
         label = torch.tensor(label, dtype=torch.float32)
