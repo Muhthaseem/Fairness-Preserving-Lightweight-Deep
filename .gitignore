@@ -1,8 +1,12 @@
 # Datasets (large video files)
 Datasets/
+frames/
+faces/
 
 # Virtual environment
 venv/
+.venv/
+env/
 
 # Python cache
 __pycache__/
@@ -12,6 +16,17 @@ __pycache__/
 
 # Outputs (generated during training)
 outputs/
+*.pth
+*.pt
+*.csv
+*.txt
+!requirements.txt
+!docs/*.md
+!docs/exports/
+
+# Notebooks & Fixes
+notebooks/.ipynb_checkpoints/
+fixes/
 
 # IDE
 .vscode/
@@ -21,3 +36,4 @@ outputs/
 # OS
 Thumbs.db
 .DS_Store
+*.log
