@@ -1,0 +1,327 @@
+# Coconut Leaf Disease Detection — ML Pipeline Overview
+
+## 1. Problem Statement
+
+Detect and classify **4 types of coconut leaf diseases** from images using object detection:
+
+| Class ID | Disease | Description |
+|---|---|---|
+| 0 | **Caterpillar** | Caterpillar damage + caterpillar spots (merged) |
+| 1 | **Drying** | Leaf drying/browning |
+| 2 | **Flaccidity** | Wilting/drooping leaves |
+| 3 | **Yellowing** | Chlorosis/yellowing of leaves |
+
+---
+
+## 2. ML Model & Architecture
+
+### Model: **YOLOv8m** (You Only Look Once v8 — Medium)
+
+| Property | Value |
+|---|---|
+| Framework | [Ultralytics YOLOv8](https://docs.ultralytics.com/) (v8.4.17) |
+| Variant | **YOLOv8m** (Medium) |
+| Parameters | **25.86M** (25,858,636 total, 25,858,620 trainable) |
+| GFLOPs | **79.1** |
+| Layers | 170 |
+| Architecture | C2f + SPPF + PAN-FPN + Detect Head |
+| Task | Object Detection (bounding box + class) |
+| Pretrained On | COCO dataset (80 classes) → Fine-tuned to 4 classes |
+
+### Architecture Breakdown
+
+```mermaid
+graph TD
+    A[Input Image 640×640×3] --> B[Backbone]
+    B --> C[Neck PAN-FPN]
+    C --> D[Detection Head]
+    D --> E[Bounding Boxes + Class Predictions]
+    
+    subgraph "Backbone (Feature Extraction)"
+        B1[Conv 3→48] --> B2[Conv 48→96]
+        B2 --> B3[C2f ×2 96ch]
+        B3 --> B4[Conv 96→192]
+        B4 --> B5[C2f ×4 192ch]
+        B5 --> B6[Conv 192→384]
+        B6 --> B7[C2f ×4 384ch]
+        B7 --> B8[Conv 384→576]
+        B8 --> B9[C2f ×2 576ch]
+        B9 --> B10[SPPF 576ch]
+    end
+    
+    subgraph "Neck (Multi-scale Feature Fusion)"
+        N1[Upsample + Concat] --> N2[C2f 384ch]
+        N2 --> N3[Upsample + Concat]
+        N3 --> N4[C2f 192ch — P3]
+        N4 --> N5[Conv + Concat]
+        N5 --> N6[C2f 384ch — P4]
+        N6 --> N7[Conv + Concat]
+        N7 --> N8[C2f 576ch — P5]
+    end
+    
+    subgraph "Head (Multi-scale Detection)"
+        H1[Detect P3 — Small objects]
+        H2[Detect P4 — Medium objects]
+        H3[Detect P5 — Large objects]
+    end
+```
+
+### Key Architecture Components
+
+| Component | Purpose |
+|---|---|
+| **C2f** (Cross-Stage Partial with 2 convolutions) | Efficient feature extraction with gradient flow |
+| **SPPF** (Spatial Pyramid Pooling - Fast) | Multi-scale context aggregation |
+| **PAN-FPN** (Path Aggregation + Feature Pyramid) | Multi-scale feature fusion for detecting objects at different sizes |
+| **Detect Head** | 3-scale detection (P3/P4/P5) with decoupled class + box regression |
+| **DFL** (Distribution Focal Loss) | Better bounding box regression via learned distributions |
+
+---
+
+## 3. Algorithm & Loss Functions
+
+### Detection Algorithm
+- **Anchor-Free Detection**: YOLOv8 is anchor-free — it directly predicts object centers and box dimensions, unlike earlier YOLO versions
+- **Non-Maximum Suppression (NMS)**: Post-processing to remove duplicate detections (IoU threshold = 0.45)
+- **Multi-Scale**: Detects at 3 feature map scales (P3, P4, P5) for objects of varying sizes
+
+### Loss Functions (3 components combined)
+
+| Loss | Purpose | Weight |
+|---|---|---|
+| **Box Loss** (CIoU) | Bounding box regression accuracy | 7.5 |
+| **Classification Loss** (BCE) | Class prediction accuracy | 0.5 |
+| **DFL Loss** (Distribution Focal) | Fine-grained box boundary prediction | 1.5 |
+
+### Optimization
+
+| Setting | Value |
+|---|---|
+| Optimizer | **AdamW** (Adam with decoupled weight decay) |
+| Initial Learning Rate | **0.001** |
+| Final Learning Rate | 0.001 × 0.01 = **0.00001** |
+| LR Schedule | **Cosine Annealing** (smooth decay) |
+| Weight Decay | 0.0005 |
+| Warmup | 3 epochs (LR ramp from 0 → 0.001) |
+| Early Stopping | Patience = 15 epochs |
+
+---
+
+## 4. Dataset
+
+### Source & Format
+
+| Property | Value |
+|---|---|
+| Source | **Roboflow** (COCO JSON format) |
+| Converted To | **YOLO format** ([.txt](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/backend/cookies.txt) label files with normalized bboxes) |
+| Image Resolution | Variable (resized to 640×640 during training) |
+
+### Dataset Splits
+
+| Split | Images | Purpose |
+|---|---|---|
+| **Train** | 726 | Model training |
+| **Validation** | 223 | Epoch-end evaluation & early stopping |
+| **Test** | 104 | Final evaluation (untouched during training) |
+| **Total** | **1,053** | |
+
+### Original → Final Class Mapping
+
+The original dataset had 7 categories. These were consolidated into 4 disease classes:
+
+| Original (COCO ID) | Action | Final (YOLO ID) |
+|---|---|---|
+| 0: coconut-leaves | ❌ **Skipped** (supercategory, 0 annotations) | — |
+| 1: caterpillar | ✅ **Kept** | 0: caterpillar |
+| 2: caterpillar-spot | 🔀 **Merged** into caterpillar | 0: caterpillar |
+| 3: drying | ✅ **Kept** | 1: drying |
+| 4: finger | ❌ **Skipped** (not a disease) | — |
+| 5: flaccidity | ✅ **Kept** | 2: flaccidity |
+| 6: yellowing | ✅ **Kept** | 3: yellowing |
+
+---
+
+## 5. Data Pipeline
+
+### Step-by-step Flow
+
+```mermaid
+flowchart LR
+    A["📁 Raw Dataset<br/>Roboflow COCO JSON"] --> B["🔄 convert_coco_to_yolo.py<br/>Class merging & remapping"]
+    B --> C["📂 YOLO Format<br/>images/ & labels/"]
+    C --> D["🧠 train.py<br/>YOLOv8 Training"]
+    D --> E["💾 best.pt<br/>Trained Weights"]
+    E --> F["🔍 inference.py<br/>Prediction"]
+    E --> G["📊 evaluate.py<br/>Evaluation"]
+    E --> H["🌐 app.py<br/>Flask API"]
+```
+
+### Annotation Conversion ([convert_coco_to_yolo.py](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/ml/src/convert_coco_to_yolo.py))
+
+1. Reads [_annotations.coco.json](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/ml/datasets/Coconut%20Leaf%20Pest%20Detection/train/_annotations.coco.json) from each split
+2. Merges `caterpillar` + `caterpillar-spot` → class 0
+3. Skips `finger` annotations (class 4) and `coconut-leaves` (class 0)
+4. Converts bboxes: `[x_min, y_min, w, h]` (pixels) → `[cx, cy, w, h]` (normalized)
+5. Clamps all values to `[0, 1]`
+6. Writes per-image [.txt](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/backend/cookies.txt) label files
+
+---
+
+## 6. Training Configuration
+
+### Current Settings ([config.yaml](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/ml/src/config.yaml))
+
+#### Training Hyperparameters
+
+| Parameter | Value | Description |
+|---|---|---|
+| Epochs | 100 | Maximum training epochs |
+| Batch Size | 8 | Limited by 6GB VRAM |
+| Image Size | 640×640 | Input resolution |
+| Patience | 15 | Early stop if no mAP improvement |
+| Optimizer | AdamW | Adam with weight decay |
+| LR₀ | 0.001 | Initial learning rate |
+| LR_f | 0.01 × LR₀ | Final learning rate ratio |
+| Warmup | 3 epochs | Gradual LR ramp-up |
+| Cosine LR | ✅ | Smooth LR decay schedule |
+| Workers | 2 | DataLoader workers (limited for Windows) |
+
+#### Data Augmentation
+
+| Augmentation | Value | Effect |
+|---|---|---|
+| HSV-Hue | 0.015 | Slight color shift |
+| HSV-Saturation | 0.7 | Color intensity variation |
+| HSV-Value | 0.4 | Brightness variation |
+| Rotation | ±10° | Moderate rotation |
+| Translation | 10% | Slight position shift |
+| Scale | 0.5 | Zoom in/out variation |
+| Horizontal Flip | 50% | Left-right mirror |
+| Vertical Flip | 0% | Disabled (leaves have orientation) |
+| Mosaic | 100% | Combines 4 images into 1 |
+| Mixup | 10% | Blends 2 images together |
+| Copy-Paste | 0% | Disabled |
+
+---
+
+## 7. Training Pipeline ([train.py](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/ml/src/train.py))
+
+### Execution Flow
+
+```mermaid
+flowchart TD
+    A[Start train.py] --> B[Load config.yaml]
+    B --> C[Set up TeeLogger<br/>Console + file logging]
+    C --> D[Parse CLI arguments<br/>epochs, batch, resume]
+    D --> E{Resume?}
+    E -->|Yes| F[Load last.pt checkpoint]
+    E -->|No| G[Load pretrained yolov8m.pt]
+    F --> H[Override nc=4]
+    G --> H
+    H --> I[Register epoch callback<br/>on_fit_epoch_end]
+    I --> J[🚀 model.train<br/>with all hyperparameters]
+    J --> K[Training loop<br/>100 epochs max]
+    K --> L{Early stopping?<br/>patience=15}
+    L -->|No improvement| M[Stop training]
+    L -->|Improving| K
+    M --> N[Copy best.pt to weights/]
+    N --> O[Print training summary table]
+    O --> P[Save results & plots]
+```
+
+### Key Features
+- **Real-time logging**: [TeeLogger](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/ml/src/train.py#28-86) captures all output to both console and timestamped log files
+- **Epoch summary callback**: Prints a clean one-line summary after each epoch with all key metrics
+- **Automatic best model saving**: Copies `best.pt` to the weights directory
+- **Training summary table**: Generates a per-epoch results table at the end
+
+---
+
+## 8. Inference & Deployment
+
+### Scripts
+
+| Script | Purpose |
+|---|---|
+| [inference.py](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/ml/src/inference.py) | Run predictions on images using trained model |
+| [evaluate.py](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/ml/src/evaluate.py) | Evaluate model on test set with metrics |
+| [app.py](file:///d:/M3%20Projects/Coconut_Leaf_Disease_Detection/ml/src/app.py) | Flask REST API for serving predictions |
+
+### Inference Parameters
+
+| Parameter | Value |
+|---|---|
+| Confidence Threshold | 0.25 |
+| IoU Threshold (NMS) | 0.45 |
+| Max Detections | 300 |
+
+---
+
+## 9. Hardware & Environment
+
+| Component | Value |
+|---|---|
+| GPU | NVIDIA GeForce RTX 4050 Laptop (6GB VRAM) |
+| CUDA | 12.8 |
+| PyTorch | 2.10.0+cu128 |
+| Ultralytics | 8.4.17 |
+| Python | 3.14.3 |
+| OS | Windows |
+| AMP | ✅ Automatic Mixed Precision (FP16/FP32) |
+
+---
+
+## 10. Evaluation Metrics
+
+| Metric | Description |
+|---|---|
+| **mAP@50** | Mean Average Precision at IoU ≥ 0.50 (primary metric) |
+| **mAP@50-95** | Mean AP averaged over IoU thresholds 0.50 to 0.95 |
+| **Precision** | Correct detections / Total detections |
+| **Recall** | Correct detections / Total ground truth objects |
+| **Box Loss** | Bounding box regression loss (CIoU) |
+| **Cls Loss** | Classification loss (BCE) |
+| **DFL Loss** | Distribution focal loss for box boundaries |
+
+### Output Artifacts
+
+| File | Description |
+|---|---|
+| `best.pt` | Best model weights (by mAP@50) |
+| `last.pt` | Final epoch weights |
+| `results.csv` | Per-epoch metrics in CSV format |
+| `results.png` | Training curves visualization |
+| `confusion_matrix.png` | Class-wise prediction accuracy |
+| `PR_curve.png` | Precision-Recall curve |
+| `labels.jpg` | Dataset label distribution visualization |
+
+---
+
+## 11. Project Structure
+
+```
+Coconut_Leaf_Disease_Detection/
+├── ml/
+│   ├── src/
+│   │   ├── train.py                    # Training script
+│   │   ├── inference.py                # Run predictions
+│   │   ├── evaluate.py                 # Evaluate on test set
+│   │   ├── app.py                      # Flask API server
+│   │   ├── convert_coco_to_yolo.py     # COCO → YOLO format converter
+│   │   ├── oversample_rare_classes.py  # Data oversampling utility
+│   │   ├── config.yaml                 # Central configuration
+│   │   ├── dataset.yaml                # YOLO dataset descriptor
+│   │   └── yolov8m.pt                  # Pretrained weights (52MB)
+│   ├── datasets/
+│   │   └── Coconut Leaf Pest Detection/
+│   │       ├── train/  (726 images)
+│   │       ├── valid/  (223 images)
+│   │       └── test/   (104 images)
+│   ├── weights/
+│   │   └── best.pt                     # Trained model weights
+│   └── runs/
+│       ├── detect/train/               # Training outputs & plots
+│       └── logs/                       # Timestamped training logs
+└── backend/                            # Web application backend
+```
